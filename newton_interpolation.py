@@ -1,10 +1,9 @@
-# Newtonian Interpolation
-
 from fractions import Fraction
 
 
 # input
 def read_number(prompt):
+    """Ask until the user types a valid number (integer, decimal, or fraction like 1/3)."""
     while True:
         text = input(prompt).strip()
         try:
@@ -14,6 +13,7 @@ def read_number(prompt):
 
 
 def get_points_from_user():
+    """Step 1: collect the data points."""
     while True:
         try:
             m = int(input("How many data points? "))
@@ -34,6 +34,7 @@ def get_points_from_user():
 
 # core algorithm
 def prepare_points(points):
+    """Step 2: sort so x0 < x1 < ... < xn, and reject repeated x-values."""
     points = sorted(points, key=lambda p: p[0])
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
@@ -45,6 +46,13 @@ def prepare_points(points):
 
 
 def divided_difference_table(xs, ys):
+    """
+    Step 3: build the divided-difference table.
+
+    table[i][j] = [y_{i-j}, ..., y_i]  (the j-th order difference ending at row i)
+      column 0  : the y-values
+      column j  : (table[i][j-1] - table[i-1][j-1]) / (x_i - x_{i-j})
+    """
     n = len(xs)
     table = [[None] * n for _ in range(n)]
     for i in range(n):
@@ -56,10 +64,15 @@ def divided_difference_table(xs, ys):
 
 
 def newton_coefficients(table):
+    """Step 4: b_k is the diagonal entry table[k][k] (first filled entry of column k)."""
     return [table[k][k] for k in range(len(table))]
 
 
 def evaluate(xs, b, x):
+    """
+    Step 5: evaluate P(x) with nested (Horner-style) multiplication:
+      P(x) = b0 + (x-x0)(b1 + (x-x1)(b2 + ... + (x-x_{n-1}) bn))
+    """
     x = Fraction(x)
     result = b[-1]
     for k in range(len(b) - 2, -1, -1):
@@ -68,6 +81,10 @@ def evaluate(xs, b, x):
 
 
 def expand_to_standard_form(xs, b):
+    """
+    Step 6: multiply out the Newton form into a0 + a1 x + a2 x^2 + ...
+    Returns the list of coefficients [a0, a1, ..., an].
+    """
     n = len(b)
     poly = [Fraction(0)] * n          # running total
     basis = [Fraction(1)]             # current product (x-x0)(x-x1)... starts at 1
@@ -87,6 +104,7 @@ def expand_to_standard_form(xs, b):
 
 # formatting
 def fmt(v):
+    """Show a Fraction as an integer or a/b."""
     return str(v.numerator) if v.denominator == 1 else f"{v.numerator}/{v.denominator}"
 
 
@@ -124,52 +142,23 @@ def standard_form_string(a):
     return out
 
 
-def print_table(xs, table):
-    n = len(xs)
-    headers = ["x", "y"] + [f"order {j}" for j in range(1, n)]
-    rows = []
-    for i in range(n):
-        row = [fmt(xs[i])] + [fmt(table[i][j]) if table[i][j] is not None else ""
-                              for j in range(n)]
-        rows.append(row)
-    widths = [max(len(h), *(len(r[c]) for r in rows)) for c, h in enumerate(headers)]
-    line = " | ".join(h.rjust(w) for h, w in zip(headers, widths))
-    print(line)
-    print("-" * len(line))
-    for r in rows:
-        print(" | ".join(v.rjust(w) for v, w in zip(r, widths)))
-
-
-# main program
+# output
 def newton_interpolation(points):
+    """Run the whole algorithm. Returns (xs, b, standard-form coefficients)."""
     xs, ys = prepare_points(points)
     table = divided_difference_table(xs, ys)
     b = newton_coefficients(table)
     a = expand_to_standard_form(xs, b)
 
-    print("\nSorted data points:")
-    for i, (x, y) in enumerate(zip(xs, ys)):
-        print(f"  x{i} = {fmt(x)},  y{i} = {fmt(y)}")
-
-    print("\nDivided-difference table:")
-    print_table(xs, table)
-
-    print("\nNewton coefficients (diagonal of the table):")
-    for k, bk in enumerate(b):
-        print(f"  b{k} = {fmt(bk)}")
-
-    print("\nNewton form:")
-    print("  P(x) = " + newton_form_string(xs, b))
-    print("\nExpanded (standard) form:")
-    print("  P(x) = " + standard_form_string(a))
-    print(f"\nDegree of polynomial: {len(a) - 1}")
-
     assert all(evaluate(xs, b, x) == y for x, y in zip(xs, ys))
+
+    print("\nNewton form:     P(x) = " + newton_form_string(xs, b))
+    print("Standard form:   P(x) = " + standard_form_string(a))
     return xs, b, a
 
 
 def main():
-    print("=== Newton Divided-Difference Interpolation ===")
+    print("Newton Interpolation")
     points = get_points_from_user()
     try:
         xs, b, _ = newton_interpolation(points)
@@ -177,7 +166,7 @@ def main():
         print("Error:", err)
         return
 
-    print("\nEvaluate P(x) at other x-values (press Enter on a blank line to quit).")
+    print("\nEvaluate P(x) (blank line to quit):")
     while True:
         text = input("  x = ").strip()
         if not text:
@@ -188,7 +177,7 @@ def main():
             print("  Not a number.")
             continue
         val = evaluate(xs, b, x)
-        print(f"  P({fmt(x)}) = {fmt(val)}  (≈ {float(val):.6g})")
+        print(f"  P({float(x):.10g}) = {float(val):.10g}")
 
 
 if __name__ == "__main__":

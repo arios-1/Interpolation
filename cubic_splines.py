@@ -1,10 +1,9 @@
-
+from bisect import bisect_right
 from fractions import Fraction
 
 MAX_POINTS = 10
 
-
-# ---------------------------------------------------------------- input
+# input
 def read_number(prompt):
     while True:
         text = input(prompt).strip()
@@ -43,9 +42,8 @@ def get_inputs_from_user():
         print("  Type N or C.")
 
 
-# ---------------------------------------------------------------- core algorithm
+# core algorithm
 def prepare_points(points):
-    """Step 2: sort so x0 < x1 < ... < xn, and reject repeated x-values."""
     points = sorted(points, key=lambda p: p[0])
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
@@ -113,17 +111,16 @@ def spline_coefficients(xs, ys, kind="natural", s0=None, sn=None):
         a_i = (b[i + 1] - b[i]) / (3 * h[i])
         c_i = (d[i + 1] - d[i]) / h[i] - h[i] * (2 * b[i] + b[i + 1]) / 3
         pieces.append((a_i, b[i], c_i, d[i]))
-    return pieces, (h, lower, diag, upper, t, b)
+    return pieces
 
 
 def find_piece(xs, x):
-    for i in range(len(xs) - 2):
-        if x < xs[i + 1]:
-            return i
-    return len(xs) - 2
+    i = bisect_right(xs, x) - 1          # index of the last x_i that is <= x
+    return min(max(i, 0), len(xs) - 2)   # clamp to a valid piece number
 
 
 def evaluate(xs, pieces, x, derivative=0):
+    """Step 6: evaluate g(x), g'(x) or g''(x) using the right piece."""
     x = Fraction(x)
     i = find_piece(xs, x)
     a, b, c, d = pieces[i]
@@ -136,6 +133,7 @@ def evaluate(xs, pieces, x, derivative=0):
 
 
 def check_spline(xs, ys, pieces, kind, s0, sn):
+    """Step 7: confirm every condition from the notes actually holds."""
     n = len(pieces)
     for i, (a, b, c, d) in enumerate(pieces):
         hi = xs[i + 1] - xs[i]
@@ -153,12 +151,14 @@ def check_spline(xs, ys, pieces, kind, s0, sn):
         assert evaluate(xs, pieces, xs[-1], 1) == sn
 
 
-# ---------------------------------------------------------------- formatting
+# formatting
 def fmt(v):
+    """Show a Fraction as an integer or a/b."""
     return str(v.numerator) if v.denominator == 1 else f"{v.numerator}/{v.denominator}"
 
 
 def piece_string(x_i, a, b, c, d):
+    """Write a_i(x-x_i)^3 + b_i(x-x_i)^2 + c_i(x-x_i) + d_i, skipping zero terms."""
     shift = f"(x - {fmt(x_i)})" if x_i >= 0 else f"(x + {fmt(-x_i)})"
     terms = [(a, shift + "^3"), (b, shift + "^2"), (c, shift), (d, "")]
     out = ""
@@ -172,64 +172,21 @@ def piece_string(x_i, a, b, c, d):
     return out or "0"
 
 
-def print_matrix(lower, diag, upper, t):
-    size = len(diag)
-    rows = []
-    for i in range(size):
-        row = [""] * size
-        for j in range(size):
-            if j == i:
-                row[j] = fmt(diag[i])
-            elif j == i - 1:
-                row[j] = fmt(lower[i])
-            elif j == i + 1:
-                row[j] = fmt(upper[i])
-            else:
-                row[j] = "0"
-        rows.append(row)
-    w = max(len(v) for r in rows for v in r)
-    wt = max(len(fmt(v)) for v in t)
-    for i, r in enumerate(rows):
-        print("  [ " + "  ".join(v.rjust(w) for v in r) + " ]   [ b" + str(i).ljust(2)
-              + "]   [ " + fmt(t[i]).rjust(wt) + " ]")
-
-
-# ---------------------------------------------------------------- driver
+# Output
 def cubic_spline(points, kind="natural", s0=None, sn=None):
+    """Run the whole algorithm and print the spline. Returns (xs, pieces)."""
     xs, ys = prepare_points(points)
-    pieces, (h, lower, diag, upper, t, b) = spline_coefficients(xs, ys, kind, s0, sn)
+    pieces = spline_coefficients(xs, ys, kind, s0, sn)
     check_spline(xs, ys, pieces, kind, s0, sn)
 
-    print("\nSorted data points:")
-    for i, (x, y) in enumerate(zip(xs, ys)):
-        print(f"  x{i} = {fmt(x)},  y{i} = {fmt(y)}")
-    print("\nInterval widths:  " + ",  ".join(f"h{i} = {fmt(v)}" for i, v in enumerate(h)))
-
-    label = "natural (g''(x0) = g''(xn) = 0)" if kind == "natural" else \
-        f"clamped (g'(x0) = {fmt(s0)}, g'(xn) = {fmt(sn)})"
-    print(f"\nBoundary condition: {label}")
-    print("\nTridiagonal system  A b = t:")
-    print_matrix(lower, diag, upper, t)
-    print("\nSolution:  " + ",  ".join(f"b{i} = {fmt(v)}" for i, v in enumerate(b)))
-
-    print("\nCoefficients of each piece:")
-    print(f"  {'i':>2} | {'interval':>14} | {'a_i':>10} | {'b_i':>10} | {'c_i':>10} | {'d_i':>10}")
-    print("  " + "-" * 70)
-    for i, (a, bb, c, d) in enumerate(pieces):
-        interval = f"[{fmt(xs[i])}, {fmt(xs[i + 1])}]"
-        print(f"  {i:>2} | {interval:>14} | {fmt(a):>10} | {fmt(bb):>10} | {fmt(c):>10} | {fmt(d):>10}")
-
-    print("\nThe spline g(x):")
+    print(f"\n{kind.capitalize()} cubic spline:")
     for i, (a, bb, c, d) in enumerate(pieces):
         print(f"  g{i}(x) = {piece_string(xs[i], a, bb, c, d)},   {fmt(xs[i])} <= x <= {fmt(xs[i + 1])}")
-
-    print("\nCheck passed: g goes through every point, and g, g', g'' are continuous"
-          " with the chosen boundary condition.")
     return xs, pieces
 
 
 def main():
-    print("=== Cubic Spline Interpolation ===")
+    print("Cubic Spline Interpolation")
     points, kind, s0, sn = get_inputs_from_user()
     try:
         xs, pieces = cubic_spline(points, kind, s0, sn)
@@ -237,7 +194,7 @@ def main():
         print("Error:", err)
         return
 
-    print("\nEvaluate g(x) at other x-values (press Enter on a blank line to quit).")
+    print("\nEvaluate g(x) (blank line to quit):")
     while True:
         text = input("  x = ").strip()
         if not text:
@@ -248,8 +205,8 @@ def main():
             print("  Not a number.")
             continue
         val = evaluate(xs, pieces, x)
-        note = "" if xs[0] <= x <= xs[-1] else "   (outside the data: extrapolated, use with care)"
-        print(f"  g({fmt(x)}) = {fmt(val)}  (≈ {float(val):.6g})   [piece g{find_piece(xs, x)}]{note}")
+        note = "" if xs[0] <= x <= xs[-1] else "   (outside data range: extrapolated)"
+        print(f"  g({float(x):.10g}) = {float(val):.10g}{note}")
 
 
 if __name__ == "__main__":
